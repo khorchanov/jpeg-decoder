@@ -1,11 +1,13 @@
 use std::io::{Cursor, Read};
 
 use byteorder::{BigEndian, ReadBytesExt};
+use crate::constants::ZIG_ZAG_MAP;
 
 use crate::structs::Header;
 
 #[allow(dead_code)]
 mod markers;
+mod constants;
 mod structs;
 
 fn main() {
@@ -75,12 +77,12 @@ fn read_quantization_table(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
         header.quantization_table[table_id as usize].set = true;
         if table_info >> 4 != 0 {
             for i in 0..64 {
-                header.quantization_table[table_id as usize].table[i] = reader.read_u16::<BigEndian>().expect("Unable to read big endian");
+                header.quantization_table[table_id as usize].table[ZIG_ZAG_MAP[i]] = reader.read_u16::<BigEndian>().expect("Unable to read big endian");
             }
             length -= 128;
         } else {
             for i in 0..64 {
-                header.quantization_table[table_id as usize].table[i] = reader.read_u8().expect("Unable to read big endian") as u16;
+                header.quantization_table[table_id as usize].table[ZIG_ZAG_MAP[i]] = reader.read_u8().expect("Unable to read big endian") as u16;
             }
             length -= 64;
         }
