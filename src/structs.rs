@@ -1,23 +1,27 @@
-use std::io::Error;
+pub struct QuantizationTable {
+    pub table: [u16; 64],
+    pub set: bool,
+}
 
 pub struct Header {
+    pub quantization_table: [QuantizationTable; 4],
     pub valid: bool,
-}
-
-pub enum ErrorKind {
-    INVALID_JPEG,
-    EXPECTED_A_MARKER,
-    UNEXPECTED_ERROR
-}
-
-impl From<std::io::Error> for ErrorKind {
-    fn from(e: Error) -> Self {
-        ErrorKind::UNEXPECTED_ERROR
-    }
 }
 
 impl Default for Header {
     fn default() -> Self {
-        Header { valid: true }
+        Header {
+            quantization_table: [QuantizationTable::default(), QuantizationTable::default(), QuantizationTable::default(), QuantizationTable::default()],
+            valid: true,
+        }
+    }
+}
+
+impl Default for QuantizationTable {
+    fn default() -> Self {
+        QuantizationTable {
+            table: [0; 64],
+            set: false,
+        }
     }
 }
