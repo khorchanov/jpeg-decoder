@@ -11,7 +11,7 @@ pub struct Header {
 impl Default for Header {
     fn default() -> Self {
         Header {
-            quantization_table: [QuantizationTable::default(), QuantizationTable::default(), QuantizationTable::default(), QuantizationTable::default()],
+            quantization_table: Default::default(),
             valid: true,
         }
     }

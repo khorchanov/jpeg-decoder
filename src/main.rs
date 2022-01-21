@@ -64,7 +64,7 @@ fn read_jpg(filename: &str) -> Header {
 
 fn read_quantization_table(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
     println!("Reading DQT");
-    let mut length: isize = reader.read_u16::<BigEndian>().expect("Cannot read APPN length") as isize;
+    let mut length: i32 = reader.read_u16::<BigEndian>().expect("Cannot read APPN length") as i32;
     length -= 2;
 
     while length > 0 {
