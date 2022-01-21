@@ -11,7 +11,7 @@ mod constants;
 mod structs;
 
 fn main() {
-    let header = read_jpg("images/test.jpg");
+    let header = read_jpg("images/img.jpg");
     print_header(header);
 }
 
@@ -31,6 +31,21 @@ fn print_header(header: Header) {
             println!();
         }
     }
+    println!("SOF==================================");
+    println!("Frame Type : {:#8b}", header.frame_type);
+    println!("Height : {}", header.height);
+    println!("Width : {}", header.width);
+    println!("Color Components:");
+    for i in 0..header.number_components {
+        let component = &header.color_components[i as usize];
+        println!("Component ID: {}", i + 1);
+        println!("Horizontal Sampling Factor : {}", component.horizontal_sampling_factor);
+        println!("Vertical Sampling Factor : {}", component.vertical_sampling_factor);
+        println!("Quantization Table ID : {}", component.quantization_table_id);
+        println!();
+    }
+    println!("DRI==================================");
+    println!("Restart Interval : {}", header.restart_interval);
 }
 
 fn read_jpg(filename: &str) -> Header {
@@ -50,16 +65,86 @@ fn read_jpg(filename: &str) -> Header {
         if last != 0xff {
             panic!("Expected a marker");
         }
-        if current == markers::DQT {
-            read_quantization_table(&mut header, &mut reader);
-            break;
-        } else if current >= markers::APP0 && current <= markers::APP15 {
-            read_appn(&mut header, &mut reader, current);
+        match current {
+            markers::SOF0 => {
+                read_start_of_frame(&mut header, &mut reader);
+                break;
+            },
+            markers::DRI => {
+                read_restart_interval(&mut header, &mut reader);
+            },
+            markers::DQT => read_quantization_table(&mut header, &mut reader),
+            markers::APP0..=markers::APP15 => read_appn(&mut header, &mut reader, current),
+            markers::SOF2=> {panic!("Progressive DCT is not supported")}
+            _ => {panic!("Unknown marker : {:#8x}", current)}
         }
         last = reader.read_u8().expect("Cannot read marker");
         current = reader.read_u8().expect("Cannot read marker");
     }
     header
+}
+
+fn read_restart_interval(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
+    println!("Reading DRI marker");
+    let length = reader.read_u16::<BigEndian>().expect("Cannot read SOF length");
+    header.restart_interval = reader.read_u16::<BigEndian>().expect("Cannot read SOF length");
+    if length - 4 != 0 {
+        panic!("DRI invalid");
+    }
+}
+
+fn read_start_of_frame(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
+    println!("Reading SOF marker");
+    if header.number_components != 0 {
+        panic!("Multiple SOFs detected");
+    }
+    let length: i32 = reader.read_u16::<BigEndian>().expect("Cannot read SOF length") as i32;
+    let precision = reader.read_u8().expect("Cannot read SOF precision");
+    if precision != 8 {
+        panic!("Invalid precision {}", precision);
+    }
+    header.height = reader.read_u16::<BigEndian>().expect("Cannot read height");
+    header.width = reader.read_u16::<BigEndian>().expect("Cannot read width");
+    if header.height == 0 || header.width == 0 {
+        panic!("Invalid JPEG dimensions");
+    }
+    header.number_components = reader.read_u8().expect("Cannot read number of components");
+    if header.number_components == 0 {
+        panic!("Number of color components must not be zero");
+    }
+    for _ in 0..header.number_components {
+        let mut component_id = reader.read_u8().expect("Cannot read component Id");
+        if component_id == 0 {
+            header.zero_based = true;
+        }
+        if header.zero_based {
+            component_id += 1;
+        }
+        if component_id == 4 || component_id == 5 {
+            panic!("YIQ color mode not supported");
+        }
+        if component_id == 0 || component_id > 3 {
+            panic!("Invalid component ID: {}", component_id);
+        }
+        let component = &mut header.color_components[component_id as usize - 1];
+        if component.used {
+            panic!("Duplicate color component Id");
+        }
+        component.used = true;
+        let sampling_factor = reader.read_u8().expect("Cannot read sampling factor");
+        component.horizontal_sampling_factor = sampling_factor >> 4;
+        component.vertical_sampling_factor = sampling_factor & 0x0f;
+        if component.horizontal_sampling_factor != 1 || component.vertical_sampling_factor != 1 {
+            panic!("Invalid quantization table Id in the frame components");
+        }
+        component.quantization_table_id = reader.read_u8().expect("Cannot read quantization table ID");
+        if component.quantization_table_id > 3 {
+            panic!("Invalid quantization table Id in the frame component");
+        }
+        if length - 8 - (3 * header.number_components as i32) != 0 {
+            panic!("SOF invalid");
+        }
+    }
 }
 
 fn read_quantization_table(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
