@@ -3,18 +3,18 @@ pub struct QuantizationTable {
     pub set: bool,
 }
 
+#[derive(Default)]
 pub struct Header {
     pub quantization_table: [QuantizationTable; 4],
-    pub valid: bool,
+    // pub frame_type: u8,
+    // pub height: usize,
+    // pub width: usize,
 }
 
-impl Default for Header {
-    fn default() -> Self {
-        Header {
-            quantization_table: Default::default(),
-            valid: true,
-        }
-    }
+pub struct  ColorComponent {
+    pub horizontal_sampling_factor: u8,
+    pub vertical_sampling_factor: u8,
+    pub quantization_table_id: u8,
 }
 
 impl Default for QuantizationTable {

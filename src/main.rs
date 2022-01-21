@@ -46,7 +46,7 @@ fn read_jpg(filename: &str) -> Header {
     }
     last = reader.read_u8().expect("Cannot read marker");
     current = reader.read_u8().expect("Cannot read marker");
-    while header.valid {
+    loop {
         if last != 0xff {
             panic!("Expected a marker");
         }
