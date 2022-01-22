@@ -44,6 +44,35 @@ fn print_header(header: Header) {
         println!("Quantization Table ID : {}", component.quantization_table_id);
         println!();
     }
+    println!("DHT==================================");
+    println!("DC Tables :");
+    for i in 0..4 {
+        if header.huffman_dc_tables[i].set {
+            println!("Table ID: {}", i);
+            println!("Symbols:");
+            for j in 0..16 {
+                print!("{}: ", j + 1);
+                for k in header.huffman_dc_tables[i].offsets[j]..header.huffman_dc_tables[i].offsets[j + 1] {
+                    print!("{:#02x} ", header.huffman_dc_tables[i].symbols[k as usize]);
+                }
+                println!();
+            }
+        }
+    }
+    println!("AC Tables :");
+    for i in 0..4 {
+        if header.huffman_ac_tables[i].set {
+            println!("Table ID: {}", i);
+            println!("Symbols:");
+            for j in 0..16 {
+                print!("{}: ", j + 1);
+                for k in header.huffman_ac_tables[i].offsets[j]..header.huffman_ac_tables[i].offsets[j + 1] {
+                    print!("{:#02x} ", header.huffman_ac_tables[i].symbols[k as usize]);
+                }
+                println!();
+            }
+        }
+    }
     println!("DRI==================================");
     println!("Restart Interval : {}", header.restart_interval);
 }
@@ -68,20 +97,60 @@ fn read_jpg(filename: &str) -> Header {
         match current {
             markers::SOF0 => {
                 read_start_of_frame(&mut header, &mut reader);
-                break;
-            },
+            }
             markers::DRI => {
                 read_restart_interval(&mut header, &mut reader);
-            },
+            }
             markers::DQT => read_quantization_table(&mut header, &mut reader),
+            markers::DHT => {
+                read_huffman_table(&mut header, &mut reader);
+                break;
+            }
             markers::APP0..=markers::APP15 => read_appn(&mut header, &mut reader, current),
-            markers::SOF2=> {panic!("Progressive DCT is not supported")}
-            _ => {panic!("Unknown marker : {:#8x}", current)}
+            markers::SOF2 => { panic!("Progressive DCT is not supported") }
+            _ => { panic!("Unknown marker : {:#8x}", current) }
         }
         last = reader.read_u8().expect("Cannot read marker");
         current = reader.read_u8().expect("Cannot read marker");
     }
     header
+}
+
+fn read_huffman_table(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
+    println!("Reading DHT Marker");
+    let mut length: i32 = reader.read_u16::<BigEndian>().expect("Cannot read SOF length") as i32;
+    length -= 2;
+
+    while length > 0 {
+        let table_info = reader.read_u8().expect("Cannot read table info");
+        let table_id = table_info & 0x0f;
+        let ac_table = (table_info >> 4) != 0;
+        if table_id > 3 {
+            panic!("Invalid Huffman table ID {}", table_id);
+        }
+        let table;
+        if ac_table {
+            table = &mut header.huffman_ac_tables[table_id as usize];
+        } else {
+            table = &mut header.huffman_dc_tables[table_id as usize];
+        }
+        table.set = true;
+        let mut symbol_sum = 0;
+        for i in 1..=16 {
+            symbol_sum += reader.read_u8().expect("cannot read symbol");
+            table.offsets[i] = symbol_sum;
+        }
+        if symbol_sum > 162 {
+            panic!("Too many symbols in the huffman table");
+        }
+        for i in 0..symbol_sum {
+            table.symbols[i as usize] = reader.read_u8().expect("cannot read symbol");
+        }
+        length -= 17 + symbol_sum as i32;
+    }
+    if length != 0 {
+        panic!("Invalid Huffman table");
+    }
 }
 
 fn read_restart_interval(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
