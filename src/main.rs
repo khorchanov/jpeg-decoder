@@ -96,7 +96,7 @@ fn read_start_of_scan(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
     if header.color_components.len() == 0 {
         panic!("SOS detected before SOF");
     }
-    let mut length = reader.read_u16::<BigEndian>().expect("Cannot read SOS length");
+    let length = reader.read_u16::<BigEndian>().expect("Cannot read SOS length");
     for component in &mut header.color_components {
         component.used = false;
     }
@@ -129,7 +129,7 @@ fn read_start_of_scan(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
     header.end_of_selection = reader.read_u8().expect("Cannot read end of selection");
     let successive_approx = reader.read_u8().expect("Cannot read sucessive approx");
     header.successive_approx_high = successive_approx >> 4;
-    header.successive_approx_low = successive_approx & 0xf;
+    header.successive_approx_low = successive_approx & 0x0f;
     if header.start_of_selection != 0 || header.end_of_selection != 63 {
         panic!("Invalid spectral selection");
     }
