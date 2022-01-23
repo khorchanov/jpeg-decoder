@@ -5,6 +5,7 @@ use crate::constants::ZIG_ZAG_MAP;
 
 use crate::structs::Header;
 use crate::utils::print_header;
+use crate::markers::*;
 
 #[allow(dead_code)]
 mod markers;
@@ -25,7 +26,7 @@ fn read_jpg(filename: &str) -> Header {
     let mut header = Header::default();
     let mut last = reader.read_u8().expect("Cannot read marker");
     let mut current = reader.read_u8().expect("Cannot read marker");
-    if last != 0xff && current != markers::SOI {
+    if last != 0xff && current != SOI {
         panic!("Invalid JPEG file");
     }
     last = reader.read_u8().expect("Cannot read marker");
@@ -35,25 +36,109 @@ fn read_jpg(filename: &str) -> Header {
             panic!("Expected a marker");
         }
         match current {
-            markers::SOF0 => {
+            SOF0 => {
                 read_start_of_frame(&mut header, &mut reader);
             }
-            markers::DRI => {
+            DRI => {
                 read_restart_interval(&mut header, &mut reader);
             }
-            markers::DQT => read_quantization_table(&mut header, &mut reader),
-            markers::DHT => {
+            DQT => read_quantization_table(&mut header, &mut reader),
+            DHT => {
                 read_huffman_table(&mut header, &mut reader);
+            }
+            SOS => {
+                read_start_of_scan(&mut header, &mut reader);
                 break;
             }
-            markers::APP0..=markers::APP15 => read_appn(&mut header, &mut reader, current),
-            markers::SOF2 => { panic!("Progressive DCT is not supported") }
-            _ => { panic!("Unknown marker : {:#8x}", current) }
+            APP0..=APP15 => read_appn(&mut header, &mut reader, current),
+            SOF2 => panic!("Progressive DCT is not supported"),
+            COM => read_comment(&mut header, &mut reader),
+            TEM => {}
+            0xFF => {
+                current = reader.read_u8().expect("Cannot read marker");
+                continue;
+            }
+            JPG0..=JPG13 | DNL | DHP | EXP => read_comment(&mut header, &mut reader),
+            SOI | EOI | DAC | SOF0..=SOF15 => panic!("Unexpected marker {}", current),
+            _ => panic!("Unknown marker : {:#8x}", current)
         }
         last = reader.read_u8().expect("Cannot read marker");
         current = reader.read_u8().expect("Cannot read marker");
     }
+    current = reader.read_u8().expect("Cannot read marker");
+    // read compressed image data
+    loop {
+        last = current;
+        current = reader.read_u8().expect("Cannot read huffman data");
+        if last == 0xFF {
+            //end of image
+            if current == EOI {
+                break;
+            } else if current == 0x00 {
+                header.huffman_data.push(last);
+                current = reader.read_u8().expect("Cannot read huffman data");
+            } else if current >= RST0 && current <= RST7 {
+                current = reader.read_u8().expect("Cannot read huffman data");
+            } else if current == 0xFF {
+                continue;
+            } else {
+                panic!("Invalid marker during compression data scan {:#06x}", current);
+            }
+        } else {
+            header.huffman_data.push(last);
+        }
+    }
     header
+}
+
+fn read_start_of_scan(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
+    println!("Reading SOS Marker");
+    if header.color_components.len() == 0 {
+        panic!("SOS detected before SOF");
+    }
+    let mut length = reader.read_u16::<BigEndian>().expect("Cannot read SOS length");
+    for component in &mut header.color_components {
+        component.used = false;
+    }
+
+    let num_components = reader.read_u8().expect("Cannot read number of components");
+    for _ in 0..num_components {
+        let mut component_id = reader.read_u8().expect("Cannot read component id");
+        if header.zero_based {
+            component_id += 1;
+        }
+        if component_id > header.number_components {
+            panic!("Invalid color component ID {}", component_id);
+        }
+        let component = &mut header.color_components[component_id as usize - 1];
+        if component.used {
+            panic!("Duplicate color component Id {}", component_id);
+        }
+        component.used = true;
+        let huffman_table_ids = reader.read_u8().expect("Cannot read huffman table ids");
+        component.huffman_dc_table_id = huffman_table_ids >> 4;
+        component.huffman_ac_table_id = huffman_table_ids & 0x0f;
+        if component.huffman_dc_table_id > 3 {
+            panic!("Invalid huffman DC table id {}", component.huffman_dc_table_id);
+        }
+        if component.huffman_ac_table_id > 3 {
+            panic!("Invalid huffman AC table id {}", component.huffman_ac_table_id);
+        }
+    }
+    header.start_of_selection = reader.read_u8().expect("Cannot read start of selection");
+    header.end_of_selection = reader.read_u8().expect("Cannot read end of selection");
+    let successive_approx = reader.read_u8().expect("Cannot read sucessive approx");
+    header.successive_approx_high = successive_approx >> 4;
+    header.successive_approx_low = successive_approx & 0xf;
+    if header.start_of_selection != 0 || header.end_of_selection != 63 {
+        panic!("Invalid spectral selection");
+    }
+    if header.successive_approx_high != 0 || header.successive_approx_low != 0 {
+        panic!("Invalid successive approximation");
+    }
+    if length - 6 - (2 * num_components as u16) != 0 {
+        panic!("SOS invalid");
+    }
 }
 
 fn read_huffman_table(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
@@ -190,7 +275,14 @@ fn read_quantization_table(header: &mut Header, reader: &mut Cursor<Vec<u8>>) {
 fn read_appn(_: &mut Header, reader: &mut Cursor<Vec<u8>>, current: u8) {
     println!("Reading APPN Marker {:#06x}", current);
     let length: u16 = reader.read_u16::<BigEndian>().expect("Cannot read APPN length");
-    println!("Length is {}", length);
+    for _ in 0..length - 2 {
+        reader.read_u8().expect("Cannot read APPNs");
+    }
+}
+
+fn read_comment(_: &mut Header, reader: &mut Cursor<Vec<u8>>) {
+    println!("Reading Comment Marker ");
+    let length: u16 = reader.read_u16::<BigEndian>().expect("Cannot read APPN length");
     for _ in 0..length - 2 {
         reader.read_u8().expect("Cannot read APPNs");
     }

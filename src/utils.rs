@@ -27,6 +27,8 @@ pub fn print_header(header: Header) {
         println!("Horizontal Sampling Factor : {}", component.horizontal_sampling_factor);
         println!("Vertical Sampling Factor : {}", component.vertical_sampling_factor);
         println!("Quantization Table ID : {}", component.quantization_table_id);
+        println!("Huffman DC Table ID : {}", component.huffman_dc_table_id);
+        println!("Huffman AC Table ID : {}", component.huffman_ac_table_id);
         println!();
     }
     println!("DHT==================================");
@@ -42,6 +44,7 @@ pub fn print_header(header: Header) {
                 }
                 println!();
             }
+            println!();
         }
     }
     println!("AC Tables :");
@@ -58,6 +61,12 @@ pub fn print_header(header: Header) {
             }
         }
     }
+    println!("SOS==================================");
+    println!("Start of selection : {}", header.start_of_selection);
+    println!("End of selection : {}", header.end_of_selection);
+    println!("Successive approx high : {}", header.successive_approx_high);
+    println!("Successive approx low : {}", header.successive_approx_low);
+    println!("Length of Huffman Data : {}", header.huffman_data.len());
     println!("DRI==================================");
     println!("Restart Interval : {}", header.restart_interval);
 }
